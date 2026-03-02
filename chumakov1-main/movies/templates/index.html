@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>MovieTrack</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div id="message" class="message"></div>
+
+        <div id="authBlock" class="auth-block">
+            <h2>MovieTrack</h2>
+            
+            <div id="loginSection">
+                <h3>Вход</h3>
+                <input type="text" id="username" placeholder="Логин" required>
+                <input type="password" id="password" placeholder="Пароль" required>
+                <button onclick="login()">Войти</button>
+                <p>Нет аккаунта? <a href="#" onclick="showRegister()">Зарегистрироваться</a></p>
+            </div>
+
+            <div id="registerSection" style="display: none;">
+                <h3>Регистрация</h3>
+                <input type="text" id="regUsername" placeholder="Логин" required>
+                <input type="password" id="regPassword" placeholder="Пароль" required>
+                <input type="password" id="regPassword2" placeholder="Повторите пароль" required>
+                <button onclick="register()">Зарегистрироваться</button>
+                <p>Уже есть аккаунт? <a href="#" onclick="showLogin()">Войти</a></p>
+            </div>
+        </div>
+
+        <div id="mainBlock" class="main-block" style="display: none;">
+            <div class="header">
+                <h2>Мои фильмы</h2>
+                <button class="logout-btn" onclick="logout()">Выйти</button>
+            </div>
+
+            <div class="add-form">
+                <h3>Добавить фильм</h3>
+                <input type="text" id="title" placeholder="Название">
+                <textarea id="description" placeholder="Описание" rows="3"></textarea>
+                <input type="number" id="rating" placeholder="Рейтинг (1-10)" min="1" max="10">
+                <select id="genre"></select>
+                <button onclick="addMovie()">Добавить</button>
+            </div>
+
+            <div class="search">
+                <input type="text" id="search" placeholder="Поиск по названию..." onkeyup="searchMovies()">
+            </div>
+
+            <div id="moviesList" class="movies-grid"></div>
+        </div>
+    </div>
+
+    <script>
+        const API = 'http://127.0.0.1:8000/api';
+
+        function showMessage(text, type) {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+            msg.className = `message ${type}`;
+            msg.style.display = 'block';
+            setTimeout(() => msg.style.display = 'none', 3000);
+        }
+
+        function showRegister() {
+            document.getElementById('loginSection').style.display = 'none';
+            document.getElementById('registerSection').style.display = 'block';
+        }
+
+        function showLogin() {
+            document.getElementById('loginSection').style.display = 'block';
+            document.getElementById('registerSection').style.display = 'none';
+        }
+
+        async function register() {
+    const username = document.getElementById('regUsername').value;
+    const password = document.getElementById('regPassword').value;
+    const password2 = document.getElementById('regPassword2').value;
+
+    if (!username || !password || !password2) {
+        showMessage('Заполните все поля', 'error');
+        return;
+    }
+
+    if (password !== password2) {
+        showMessage('Пароли не совпадают', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API}/register/`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username, password})
+        });
+
+        if (response.ok) {
+            showMessage('Регистрация успешна! Теперь войдите', 'success');
+            showLogin();
+        } else {
+            const data = await response.json();
+            showMessage(data.error || 'Ошибка регистрации', 'error');
+        }
+    } catch (error) {
+        showMessage('Ошибка соединения с сервером', 'error');
+    }
+}
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            if (!username || !password) {
+                showMessage('Заполните все поля', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API}/token/`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username, password})
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('token', data.access);
+                    
+                    showMessage('Вход выполнен!', 'success');
+                    
+                    document.getElementById('authBlock').style.display = 'none';
+                    document.getElementById('mainBlock').style.display = 'block';
+
+                    loadGenres();
+                    loadMovies();
+                } else {
+                    showMessage('Неверный логин или пароль', 'error');
+                }
+            } catch (error) {
+                showMessage('Не удалось связаться с сервером', 'error');
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            document.getElementById('authBlock').style.display = 'block';
+            document.getElementById('mainBlock').style.display = 'none';
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            showLogin();
+        }
+
+        async function loadGenres() {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+            
+            const res = await fetch(`${API}/genres/`, {
+                headers: {'Authorization': 'Bearer ' + token}
+            });
+            const genres = await res.json();
+            const select = document.getElementById('genre');
+            select.innerHTML = '<option value="">Выберите жанр</option>';
+            genres.forEach(g => {
+                select.innerHTML += `<option value="${g.id}">${g.name}</option>`;
+            });
+        }
+
+        async function loadMovies(search = '') {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+            
+            let url = `${API}/movies/`;
+            if (search) url += `?search=${search}`;
+
+            const res = await fetch(url, {
+                headers: {'Authorization': 'Bearer ' + token}
+            });
+            const data = await res.json();
+            const movies = data.results || data;
+
+            const list = document.getElementById('moviesList');
+            if (movies.length === 0) {
+                list.innerHTML = '<p>Нет фильмов</p>';
+                return;
+            }
+
+            list.innerHTML = movies.map(m => {
+                return `
+                    <div class="movie-card">
+                        <h3>${m.title}</h3>
+                        <p>Рейтинг: ${m.rating}/10</p>
+                        <p>Жанр: ${m.genre_name || 'Не указан'}</p>
+                        <p>${m.description || ''}</p>
+                        <p><small>${new Date(m.created_at).toLocaleDateString()}</small></p>
+                        <button class="delete-btn" onclick="deleteMovie(${m.id})">Удалить</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        let searchTimer;
+        function searchMovies() {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                loadMovies(document.getElementById('search').value);
+            }, 500);
+        }
+
+        async function addMovie() {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+
+            const movieData = {
+                title: document.getElementById('title').value,
+                description: document.getElementById('description').value,
+                genre: parseInt(document.getElementById('genre').value),
+                rating: parseInt(document.getElementById('rating').value)
+            };
+
+            if (!movieData.title || !movieData.description || !movieData.genre || !movieData.rating) {
+                showMessage('Заполните все поля', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API}/movies/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(movieData)
+                });
+
+                if (res.ok) {
+                    loadMovies();
+                    document.getElementById('title').value = '';
+                    document.getElementById('description').value = '';
+                    document.getElementById('rating').value = '';
+                    document.getElementById('genre').value = '';
+                    showMessage('Фильм добавлен!', 'success');
+                } else if (res.status === 401) {
+                    showMessage('Ошибка авторизации', 'error');
+                    logout();
+                } else {
+                    const error = await res.json();
+                    showMessage('Ошибка: ' + JSON.stringify(error), 'error');
+                }
+            } catch (err) {
+                showMessage('Ошибка соединения', 'error');
+            }
+        }
+
+        async function deleteMovie(id) {
+            if (!confirm('Удалить фильм?')) return;
+
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${API}/movies/${id}/`, {
+                method: 'DELETE',
+                headers: {'Authorization': 'Bearer ' + token}
+            });
+
+            if (res.ok) {
+                showMessage('Фильм удален', 'success');
+                loadMovies();
+            }
+        }
+
+        if (localStorage.getItem('token')) {
+            document.getElementById('authBlock').style.display = 'none';
+            document.getElementById('mainBlock').style.display = 'block';
+            loadGenres();
+            loadMovies();
+        }
+    </script>
+</body>
+</html>
